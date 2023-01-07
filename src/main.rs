@@ -2,11 +2,22 @@ use std::env;
 use std::path::Path;
 use std::process;
 use url::Url;
+use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::video::FullscreenType;
+use sdl2::rect::Rect;
+use std::time::{Duration, Instant};
 use gstreamer::prelude::*;
 
-const WIDTH: u32 = 1920;
-const HEIGHT: u32 = 1080;
+const WIDTH: u32 = 400;
+const HEIGHT: u32 = 400;
+
+// handle the annoying Rect i32
+macro_rules! rect(
+    ($x:expr, $y:expr, $w:expr, $h:expr) => (
+        Rect::new($x as i32, $y as i32, $w as u32, $h as u32)
+    )
+);
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -34,6 +45,7 @@ fn main() {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
+    let ttf_context = sdl2::ttf::init().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let window = video_subsystem.window(&args[0], WIDTH, HEIGHT)
@@ -51,6 +63,17 @@ fn main() {
     // Because every Texture is owned by a TextureCreator, we need
     // to own the TextureCreature, to prevent its drop.
     let texture_creator = canvas.texture_creator();
+
+    // Create a texture for the FPS text
+    let mut fps = format!("   FPS");
+    let font = ttf_context.load_font("sansfont.ttf", 14).unwrap();
+    let surface = font
+        .render(&fps)
+        .blended(Color::RGBA(255, 255, 255, 255))
+        .unwrap();
+    let mut fps_tex = texture_creator.create_texture_from_surface(&surface).unwrap();
+    let tex_query = fps_tex.query();
+    let mut fps_dst = rect!(0, 0, tex_query.width, tex_query.height);
 
     gstreamer::init().unwrap();
 
@@ -85,9 +108,11 @@ fn main() {
 
     let bus = pipeline.bus().unwrap();
     let mut playing = true;
+    let mut frames: u32 = 0;
     let mut width = WIDTH;
     let mut height = HEIGHT;
     let mut tex = texture_creator.create_texture_streaming(PixelFormatEnum::IYUV, width, height).unwrap();
+    let mut start = Instant::now();
 
     'running: loop {
         for msg in bus.iter() {
@@ -116,9 +141,20 @@ fn main() {
                 Event::Quit {..} |
                 Event::KeyDown { keycode: Some(Keycode::Q), .. } |
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                    /* Quit */
                     break 'running
                 },
+                Event::KeyDown { keycode: Some(Keycode::F), .. } => {
+                    /* Toggle Fullscreen */
+                    let window = canvas.window_mut();
+                    match window.fullscreen_state() {
+                        FullscreenType::True |
+                        FullscreenType::Desktop => window.set_fullscreen(FullscreenType::Off).unwrap(),
+                        FullscreenType::Off => window.set_fullscreen(FullscreenType::True).unwrap(),
+                    }
+                },
                 Event::KeyDown { keycode: Some(Keycode::Space), .. } => {
+                    /* Toggle play/pause */
                     if playing {
                         playing = false;
                         pipeline
@@ -168,7 +204,10 @@ fn main() {
                         .unwrap();
                     canvas.clear();
                     canvas.copy(&tex, None, None).unwrap();
+                    canvas.copy(&fps_tex, None, Some(fps_dst)).unwrap();
                     canvas.present();
+
+                    frames = frames + 1;
                 }
             },
             None => {
@@ -177,6 +216,22 @@ fn main() {
                 }
             },
         };
+        let elapsed = start.elapsed();
+        if elapsed >= Duration::new(1, 0) {
+            fps = format!("{} FPS", frames as u64 / elapsed.as_secs());
+            let surface = font
+                .render(&fps)
+                .blended(Color::RGBA(255, 255, 255, 255))
+                .unwrap();
+            fps_tex = texture_creator.create_texture_from_surface(&surface).unwrap();
+
+            // Update dst rect
+            let tex_query = fps_tex.query();
+            fps_dst = rect!(0, 0, tex_query.width, tex_query.height);
+
+            start = Instant::now();
+            frames = 0;
+        }
     };
 
     // Shutdown pipeline

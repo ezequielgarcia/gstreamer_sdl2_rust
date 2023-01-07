@@ -10,4 +10,8 @@ gstreamer = "0.19.5"
 gstreamer-app = "0.19.2"
 gstreamer-video = "0.19.5"
 url = "2.3.1"
-sdl2 = "0.35.2"
+
+[dependencies.sdl2]
+version = "0.35.2"
+default-features = false
+features = ["ttf"]
