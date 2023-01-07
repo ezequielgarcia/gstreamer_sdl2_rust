@@ -1,3 +1,11 @@
+//
+// A media player using Rust and SDL2 for Video and Standard Audio for audio.
+//
+// TODO:
+// * Keep aspect-ratio
+// * Re-design following some kind of "game" design.
+// * With the re-design allow to show volume changes and mute and stuff.
+//
 use std::env;
 use std::path::Path;
 use std::process;
@@ -79,8 +87,8 @@ fn main() {
 
     let pipeline_str = format!("{} ! \
                                decodebin name=dmux \
-                               dmux. ! queue ! autovideoconvert ! video/x-raw,format=I420 ! appsink name=sink sync=true \
-                               dmux. ! queue ! audioconvert ! autoaudiosink",
+                               dmux. ! queue ! autovideoconvert ! video/x-raw,format=I420 ! appsink name=sink \
+                               dmux. ! queue ! audioconvert ! volume name=volume ! autoaudiosink",
                                source);
     let mut context = gstreamer::ParseContext::new();
     let pipeline =
@@ -98,6 +106,7 @@ fn main() {
 
     let pipeline = pipeline.dynamic_cast::<gstreamer::Pipeline>().unwrap();
     let sink = pipeline.by_name("sink").unwrap();
+    let volume = pipeline.by_name("volume").unwrap();
     let appsink = sink.dynamic_cast::<gstreamer_app::AppSink>().unwrap();
 
     pipeline
@@ -143,6 +152,21 @@ fn main() {
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     /* Quit */
                     break 'running
+                },
+                Event::KeyDown { keycode: Some(Keycode::M), .. } => {
+                    /* Mute */
+                    let v: f64 = 0.0;
+                    volume.set_property("volume", &v);
+                },
+                Event::KeyDown { keycode: Some(Keycode::PageUp), .. } => {
+                    let mut v: f64 = volume.property_value("volume").get().unwrap();
+                    v = (v + 0.1).clamp(0.0, 1.0);
+                    volume.set_property("volume", &v);
+                },
+                Event::KeyDown { keycode: Some(Keycode::PageDown), .. } => {
+                    let mut v: f64 = volume.property_value("volume").get().unwrap();
+                    v = (v - 0.1).clamp(0.0, 1.0);
+                    volume.set_property("volume", &v);
                 },
                 Event::KeyDown { keycode: Some(Keycode::F), .. } => {
                     /* Toggle Fullscreen */
